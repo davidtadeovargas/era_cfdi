@@ -7,10 +7,15 @@ package com.era.era_cfdi;
 
 import com.era.models.BasDats;
 import com.era.models.Company;
+import com.era.models.ImpuestosXVenta;
+import com.era.models.Partvta;
 import com.era.models.Sales;
+import com.era.models.Unid;
+import com.era.repositories.RepositoryFactory;
 import com.era.utilities.UtilitiesFactory;
 import java.io.File;
 import java.math.BigDecimal;
+import java.util.List;
 import xmlcfdi.Cfdi;
 
 /**
@@ -84,6 +89,58 @@ public class RingManager {
             }
             cfdi.setAtributo("Total", Sale.getTotal().toString());
         }
+        
+        int contadorConcepto = 0;
+        
+        //Get all the part items from the sale
+        final List<Partvta> items = RepositoryFactory.getInstance().getPartvtaRepository().getPartsVta(Sale.getId());
+        for(Partvta Partvta_:items){
+            
+            final Unid Unid = (Unid)RepositoryFactory.getInstance().getUnidsRepository().getByCode(Partvta_.getUnid());
+            
+            cfdi.conceptos().concepto(contadorConcepto).setAtributo("ClaveProdServ", Partvta_.getProd());
+            cfdi.conceptos().concepto(contadorConcepto).setAtributo("Cantidad", String.valueOf(Partvta_.getCant()));
+            cfdi.conceptos().concepto(contadorConcepto).setAtributo("ClaveUnidad", Unid.getClaveSAT());
+            cfdi.conceptos().concepto(contadorConcepto).setAtributo("Descripcion", Partvta_.getDescrip());
+            cfdi.conceptos().concepto(contadorConcepto).setAtributo("ValorUnitario", Partvta_.getPre().toString());
+            
+            if(Partvta_.getDescu().compareTo(BigDecimal.ZERO)>0){
+                cfdi.conceptos().concepto(contadorConcepto).setAtributo("Descuento", Partvta_.getDescu().toString());
+            }
+            
+            cfdi.conceptos().concepto(contadorConcepto).setAtributo("Importe", Partvta_.getImpo().toString());
+            
+            int contadorTraslado = 0;
+            int contadorRetencion = 0;
+            
+            //Get all the taxes from the part item
+            final List<ImpuestosXVenta> taxes = RepositoryFactory.getInstance().getImpuestosXVentasRepository().getAllBySaleId(Partvta_.getVta());
+            for(ImpuestosXVenta ImpuestosXVenta_:taxes){
+                
+                if(ImpuestosXVenta_.isRetencion()){
+                    cfdi.conceptos().concepto(contadorConcepto).impuestos().Retenciones().Retencion(contadorRetencion).setAtributo("Base",Partvta_.getImpo().subtract(Partvta_.getDescu()).toString());
+                    cfdi.conceptos().concepto(contadorConcepto).impuestos().Retenciones().Retencion(contadorRetencion).setAtributo("Impuesto", ImpuestosXVenta_.getImpuesto());
+                    cfdi.conceptos().concepto(contadorConcepto).impuestos().Retenciones().Retencion(contadorRetencion).setAtributo("TipoFactor", "Tasa");
+                    cfdi.conceptos().concepto(contadorConcepto).impuestos().Retenciones().Retencion(contadorRetencion).setAtributo("TasaOCuota",ImpuestosXVenta_.getTotal().toString());
+                    cfdi.conceptos().concepto(contadorConcepto).impuestos().Retenciones().Retencion(contadorRetencion).setAtributo("Importe", Partvta_.getImpo().toString());
+                }
+                else{
+                    cfdi.conceptos().concepto(contadorConcepto).impuestos().Traslados().Traslado(contadorTraslado).setAtributo("Base", Partvta_.getImpo().subtract(Partvta_.getDescu()).toString());
+                    cfdi.conceptos().concepto(contadorConcepto).impuestos().Traslados().Traslado(contadorTraslado).setAtributo("Impuesto", ImpuestosXVenta_.getImpuesto());
+                    cfdi.conceptos().concepto(contadorConcepto).impuestos().Traslados().Traslado(contadorTraslado).setAtributo("TipoFactor", "Tasa");
+                    cfdi.conceptos().concepto(contadorConcepto).impuestos().Traslados().Traslado(contadorTraslado).setAtributo("TasaOCuota",ImpuestosXVenta_.getTotal().toString());
+                    cfdi.conceptos().concepto(contadorConcepto).impuestos().Traslados().Traslado(contadorTraslado).setAtributo("Importe", Partvta_.getImpo().toString());
+                    
+                    ++contadorTraslado;
+                    ++contadorRetencion;
+                }
+            }
+            
+            ++contadorConcepto;
+        }
+        
+        //Create parts items
+        
         
         cfdi.setCertificado(BasDats.getRutcer());
         
