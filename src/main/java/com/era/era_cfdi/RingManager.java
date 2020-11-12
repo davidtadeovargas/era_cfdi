@@ -42,7 +42,8 @@ public class RingManager {
                                     final float changeType,
                                     final String tipoComprobante,                                    
                                     final BigDecimal totalImpuestosRetenidos,
-                                    final BigDecimal totalImpuestosTrasladados) throws Exception {
+                                    final BigDecimal totalImpuestosTrasladados,
+                                    final boolean testMode) throws Exception {
         
         Cfdi cfdi = new Cfdi();
         cfdi.setAtributo("xmlns:cfdi", "http://www.sat.gob.mx/cfd/3");
@@ -141,7 +142,6 @@ public class RingManager {
         
         //Create parts items
         
-        
         cfdi.setCertificado(BasDats.getRutcer());
         
         if(!trasladado){
@@ -154,20 +154,22 @@ public class RingManager {
         
         cfdi.timbradoPrueba(test);
         
-        //cfdi.sellarCFDI("cadenaoriginal_3_3.xslt", BasDats.getRutcer(), BasDats.getRutkey(), BasDats.getPasscer());
+        cfdi.sellarCFDI("cadenaoriginal_3_3.xslt", BasDats.getRutcer(), BasDats.getRutkey(), BasDats.getPasscer());
         
-        //cfdi.timbrar(Customer.getRFC());
+        cfdi.timbradoPrueba(testMode);
+        
+        cfdi.timbrar(Customer.getRFC());
         
         final ResultRing ResultRing = new ResultRing();
-        //ResultRing.setTransactionID(cfdi.getsTransactionID().replace("\"",""));
-        //ResultRing.setSello(cfdi.getsSelloDigital().replace("\"",""));
-        //ResultRing.setCertificateSAT(cfdi.getNoCertificadoSat().replace("\"",""));
-        //ResultRing.setSello(cfdi.getSelloSAT().replace("\"",""));
-        //ResultRing.setFiscalFolio(cfdi.getUUID().replace("\"",""));
-        //ResultRing.setXml(cfdi.getXMLflujo());
-        //ResultRing.setRingedDate(cfdi.getFechaTimbrado().replace("\"",""));
-        //ResultRing.setVersion("3.3");
-        //ResultRing.setOriginalString("||" + ResultRing.getVersion() + "|" + ResultRing.getFiscalFolio() + "|" + ResultRing.getRingedDate() + "|" + ResultRing.getSello() + "|" + ResultRing.getCertificateSAT() + "||");
+        ResultRing.setTransactionID(cfdi.getsTransactionID().replace("\"",""));
+        ResultRing.setSello(cfdi.getsSelloDigital().replace("\"",""));
+        ResultRing.setCertificateSAT(cfdi.getNoCertificadoSat().replace("\"",""));
+        ResultRing.setSello(cfdi.getSelloSAT().replace("\"",""));
+        ResultRing.setFiscalFolio(cfdi.getUUID().replace("\"",""));
+        ResultRing.setXml(cfdi.getXMLflujo());
+        ResultRing.setRingedDate(cfdi.getFechaTimbrado().replace("\"",""));
+        ResultRing.setVersion("3.3");
+        ResultRing.setOriginalString("||" + ResultRing.getVersion() + "|" + ResultRing.getFiscalFolio() + "|" + ResultRing.getRingedDate() + "|" + ResultRing.getSello() + "|" + ResultRing.getCertificateSAT() + "||");
         
         return ResultRing;
     }
