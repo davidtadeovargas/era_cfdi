@@ -10,11 +10,13 @@ import com.era.models.Company;
 import com.era.models.ImpuestosXVenta;
 import com.era.models.Partvta;
 import com.era.models.Sales;
+import com.era.models.Tax;
 import com.era.models.Unid;
 import com.era.repositories.RepositoryFactory;
 import com.era.utilities.UtilitiesFactory;
-import java.io.File;
 import java.math.BigDecimal;
+import java.text.DateFormat;
+import java.text.SimpleDateFormat;
 import java.util.List;
 import xmlcfdi.Cfdi;
 
@@ -26,7 +28,7 @@ public class RingManager {
     
     private static RingManager RingManager;
     
-    private final String temportalXMLGeneration = UtilitiesFactory.getSingleton().getFilesUtility().getCurrentWorkingDir();
+    private final String temportalXMLGeneration = UtilitiesFactory.getSingleton().getFilesUtility().getCurrentWorkingDir() + "\\tmp.xml";
     
     public static RingManager getSingleton(){
         if(RingManager==null){
@@ -44,7 +46,7 @@ public class RingManager {
                                     final BigDecimal totalImpuestosRetenidos,
                                     final BigDecimal totalImpuestosTrasladados,
                                     final boolean testMode) throws Exception {
-        
+                
         Cfdi cfdi = new Cfdi();
         cfdi.setAtributo("xmlns:cfdi", "http://www.sat.gob.mx/cfd/3");
         cfdi.setAtributo("xmlns:xsi", "http://www.w3.org/2001/XMLSchema-instance");
@@ -55,13 +57,17 @@ public class RingManager {
         cfdi.setAtributo("Version","3.3");
         cfdi.setAtributo("Serie", Sale.getSerie());
         cfdi.setAtributo("Folio", Sale.getReferenceNumber());
-        cfdi.setAtributo("Fecha",Sale.getFalt().toString());
+        
+        final DateFormat dateFormat = new SimpleDateFormat("yyyy-MM-dd hh:mm:ss");
+        final String fecha = dateFormat.format(Sale.getFalt()).replace(" ", "T");
+        
+        cfdi.setAtributo("Fecha",fecha);
         if(!trasladado){
             cfdi.setAtributo("MetodoPago", Sale.getPaymentMethod());
             cfdi.setAtributo("FormaPago",Sale.getPaymentForm());
         }
         cfdi.setAtributo("Moneda", Sale.getCoinCode());
-        cfdi.setAtributo("TipoCambio", String.valueOf(changeType));
+        cfdi.setAtributo("TipoCambio", String.valueOf((int)changeType));
         cfdi.setAtributo("TipoDeComprobante", tipoComprobante);
         cfdi.setAtributo("LugarExpedicion", Sale.getExpeditionPlace());
         
@@ -71,7 +77,7 @@ public class RingManager {
         
         cfdi.receptor().setAtributo("Rfc", Customer.getRFC());
         cfdi.receptor().setAtributo("Nombre", Customer.getNom());
-        cfdi.receptor().setAtributo("UsoCFDI", "");
+        cfdi.receptor().setAtributo("UsoCFDI", Sale.getUsocfdi());
         
         if (totalImpuestosRetenidos.compareTo(BigDecimal.ZERO) > 0 && !trasladado) {
             cfdi.impuestos().setAtributo("TotalImpuestosRetenidos", totalImpuestosRetenidos.toString());
@@ -80,15 +86,20 @@ public class RingManager {
             cfdi.impuestos().setAtributo("TotalImpuestosTrasladados", totalImpuestosTrasladados.toString());
         }
         
+        final BigDecimal totalDecimal = Sale.getTotal().setScale(2, BigDecimal.ROUND_HALF_EVEN);
+        
         if(trasladado){
-            cfdi.setAtributo("SubTotal", "0.00");
-            cfdi.setAtributo("Total", "0.00");
-        }else{
             cfdi.setAtributo("SubTotal", Sale.getSubtotal().toString());
             if (Sale.getTotalDisccount().compareTo(BigDecimal.ZERO) > 0){
                 cfdi.setAtributo("Descuento", Sale.getTotalDisccount().toString());
             }
-            cfdi.setAtributo("Total", Sale.getTotal().toString());
+            cfdi.setAtributo("Total", totalDecimal.toString());
+        }else{
+            cfdi.setAtributo("SubTotal", Sale.getSubtotal().toString());
+            if (Sale.getTotalDisccount().compareTo(BigDecimal.ZERO) > 0){
+                cfdi.setAtributo("Descuento", totalDecimal.toString());
+            }
+            cfdi.setAtributo("Total", totalDecimal.toString());
         }
         
         int contadorConcepto = 0;
@@ -99,7 +110,7 @@ public class RingManager {
             
             final Unid Unid = (Unid)RepositoryFactory.getInstance().getUnidsRepository().getByCode(Partvta_.getUnid());
             
-            cfdi.conceptos().concepto(contadorConcepto).setAtributo("ClaveProdServ", Partvta_.getProd());
+            cfdi.conceptos().concepto(contadorConcepto).setAtributo("ClaveProdServ", Partvta_.getKeySAT());
             cfdi.conceptos().concepto(contadorConcepto).setAtributo("Cantidad", String.valueOf(Partvta_.getCant()));
             cfdi.conceptos().concepto(contadorConcepto).setAtributo("ClaveUnidad", Unid.getClaveSAT());
             cfdi.conceptos().concepto(contadorConcepto).setAtributo("Descripcion", Partvta_.getDescrip());
@@ -118,19 +129,27 @@ public class RingManager {
             final List<ImpuestosXVenta> taxes = RepositoryFactory.getInstance().getImpuestosXVentasRepository().getAllBySaleId(Partvta_.getVta());
             for(ImpuestosXVenta ImpuestosXVenta_:taxes){
                 
+                final Tax Tax = (Tax)RepositoryFactory.getInstance().getTaxesRepository().getByCode(ImpuestosXVenta_.getImpuesto());
+                
+                final String tasaCuota = String.valueOf(Tax.getValue() / 100);
+                BigDecimal importeBigDecimal = Partvta_.getPre().multiply(BigDecimal.valueOf(Double.valueOf(tasaCuota)));
+                importeBigDecimal = importeBigDecimal.setScale(2, BigDecimal.ROUND_HALF_EVEN);
+                final String importe = String.valueOf(importeBigDecimal);
+                final String base = String.valueOf((importeBigDecimal.multiply(Partvta_.getCant())).setScale(2, BigDecimal.ROUND_HALF_EVEN));
+                
                 if(ImpuestosXVenta_.isRetencion()){
-                    cfdi.conceptos().concepto(contadorConcepto).impuestos().Retenciones().Retencion(contadorRetencion).setAtributo("Base",Partvta_.getImpo().subtract(Partvta_.getDescu()).toString());
+                    cfdi.conceptos().concepto(contadorConcepto).impuestos().Retenciones().Retencion(contadorRetencion).setAtributo("Base",base);
                     cfdi.conceptos().concepto(contadorConcepto).impuestos().Retenciones().Retencion(contadorRetencion).setAtributo("Impuesto", ImpuestosXVenta_.getImpuesto());
                     cfdi.conceptos().concepto(contadorConcepto).impuestos().Retenciones().Retencion(contadorRetencion).setAtributo("TipoFactor", "Tasa");
-                    cfdi.conceptos().concepto(contadorConcepto).impuestos().Retenciones().Retencion(contadorRetencion).setAtributo("TasaOCuota",ImpuestosXVenta_.getTotal().toString());
-                    cfdi.conceptos().concepto(contadorConcepto).impuestos().Retenciones().Retencion(contadorRetencion).setAtributo("Importe", Partvta_.getImpo().toString());
+                    cfdi.conceptos().concepto(contadorConcepto).impuestos().Retenciones().Retencion(contadorRetencion).setAtributo("TasaOCuota",tasaCuota);
+                    cfdi.conceptos().concepto(contadorConcepto).impuestos().Retenciones().Retencion(contadorRetencion).setAtributo("Importe", importe);
                 }
                 else{
-                    cfdi.conceptos().concepto(contadorConcepto).impuestos().Traslados().Traslado(contadorTraslado).setAtributo("Base", Partvta_.getImpo().subtract(Partvta_.getDescu()).toString());
+                    cfdi.conceptos().concepto(contadorConcepto).impuestos().Traslados().Traslado(contadorTraslado).setAtributo("Base", base);
                     cfdi.conceptos().concepto(contadorConcepto).impuestos().Traslados().Traslado(contadorTraslado).setAtributo("Impuesto", ImpuestosXVenta_.getImpuesto());
                     cfdi.conceptos().concepto(contadorConcepto).impuestos().Traslados().Traslado(contadorTraslado).setAtributo("TipoFactor", "Tasa");
-                    cfdi.conceptos().concepto(contadorConcepto).impuestos().Traslados().Traslado(contadorTraslado).setAtributo("TasaOCuota",ImpuestosXVenta_.getTotal().toString());
-                    cfdi.conceptos().concepto(contadorConcepto).impuestos().Traslados().Traslado(contadorTraslado).setAtributo("Importe", Partvta_.getImpo().toString());
+                    cfdi.conceptos().concepto(contadorConcepto).impuestos().Traslados().Traslado(contadorTraslado).setAtributo("TasaOCuota",tasaCuota);
+                    cfdi.conceptos().concepto(contadorConcepto).impuestos().Traslados().Traslado(contadorTraslado).setAtributo("Importe", importe);
                     
                     ++contadorTraslado;
                     ++contadorRetencion;
@@ -148,23 +167,18 @@ public class RingManager {
             //sCreImpXML33(total_impuesto_trasladado, total_impuesto_retenido, retencionesCfdi, trasladosCfdi,cfdi);
         }
         
-        boolean test = false;
-        if(Customer.getRFC().compareTo("LAN7008173R5") == 0)  
-            test = true;
-        
-        cfdi.timbradoPrueba(test);
-        
-        cfdi.sellarCFDI("cadenaoriginal_3_3.xslt", BasDats.getRutcer(), BasDats.getRutkey(), BasDats.getPasscer());
+        final String rutCert = BasDats.getRutcer();
+        cfdi.sellarCFDI("cadenaoriginal_3_3.xslt", BasDats.getRutkey(), BasDats.getPasscer());
         
         cfdi.timbradoPrueba(testMode);
         
-        cfdi.timbrar(Customer.getRFC());
+        cfdi.timbrar(BasDats.getRFC());
         
         final ResultRing ResultRing = new ResultRing();
         ResultRing.setTransactionID(cfdi.getsTransactionID().replace("\"",""));
         ResultRing.setSello(cfdi.getsSelloDigital().replace("\"",""));
         ResultRing.setCertificateSAT(cfdi.getNoCertificadoSat().replace("\"",""));
-        ResultRing.setSello(cfdi.getSelloSAT().replace("\"",""));
+        //ResultRing.setSello(cfdi.getSelloSAT().replace("\"",""));
         ResultRing.setFiscalFolio(cfdi.getUUID().replace("\"",""));
         ResultRing.setXml(cfdi.getXMLflujo());
         ResultRing.setRingedDate(cfdi.getFechaTimbrado().replace("\"",""));
